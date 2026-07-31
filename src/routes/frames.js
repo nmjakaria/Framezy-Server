@@ -1,6 +1,8 @@
 import { Router } from "express";
 import Frame from "../models/Frame.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
+import { isValidImgbbUrl } from "../utils/validateImageUrl.js";
+import { generateUniqueSlug, isValidCustomSlug } from "../utils/slugify.js";
 
 const router = Router();
 
@@ -14,9 +16,48 @@ router.get("/", async (req, res) => {
   res.json(frames);
 });
 
+// Admin: every frame, any owner, any status — this is the endpoint the
+// admin dashboard was missing
+router.get("/all", requireAuth, requireRole("admin"), async (req, res) => {
+  const { status, category } = req.query;
+  const filter = {};
+  if (status) filter.status = status;
+  if (category) filter.category = category;
+  const frames = await Frame.find(filter).sort({ createdAt: -1 }).limit(200);
+  res.json(frames);
+});
+
+// Framer: list their own frames, any status
+router.get("/mine", requireAuth, requireRole("framer", "admin"), async (req, res) => {
+  const frames = await Frame.find({ ownerId: req.user.sub }).sort({ createdAt: -1 });
+  res.json(frames);
+});
+
+// Guest: look up a frame by its public share slug (published only)
+router.get("/slug/:slug", async (req, res) => {
+  const frame = await Frame.findOne({ slug: req.params.slug, status: "published" });
+  if (!frame) return res.status(404).json({ error: "Frame not found" });
+  res.json(frame);
+});
+
 // Framer: create a frame (draft or pending_review)
 router.post("/", requireAuth, requireRole("framer", "admin"), async (req, res) => {
-  const frame = await Frame.create({ ...req.body, ownerId: req.user.sub });
+  const { fileUrl, thumbnailUrl, slug: requestedSlug, name } = req.body;
+
+  if (!isValidImgbbUrl(fileUrl)) {
+    return res.status(400).json({ error: "fileUrl must be a valid imgbb image URL" });
+  }
+  if (thumbnailUrl && !isValidImgbbUrl(thumbnailUrl)) {
+    return res.status(400).json({ error: "thumbnailUrl must be a valid imgbb image URL" });
+  }
+  if (requestedSlug && !isValidCustomSlug(requestedSlug)) {
+    return res.status(400).json({
+      error: "Custom URL must be 3-60 characters, lowercase letters/numbers/hyphens only, and not a reserved word",
+    });
+  }
+
+  const slug = await generateUniqueSlug(Frame, { requestedSlug, name });
+  const frame = await Frame.create({ ...req.body, slug, ownerId: req.user.sub });
   res.status(201).json(frame);
 });
 
@@ -27,6 +68,26 @@ router.patch("/:id", requireAuth, async (req, res) => {
   if (req.user.role !== "admin" && frame.ownerId.toString() !== req.user.sub) {
     return res.status(403).json({ error: "Forbidden" });
   }
+
+  if (req.body.fileUrl && !isValidImgbbUrl(req.body.fileUrl)) {
+    return res.status(400).json({ error: "fileUrl must be a valid imgbb image URL" });
+  }
+  if (req.body.thumbnailUrl && !isValidImgbbUrl(req.body.thumbnailUrl)) {
+    return res.status(400).json({ error: "thumbnailUrl must be a valid imgbb image URL" });
+  }
+
+  if (req.body.slug && req.body.slug !== frame.slug) {
+    if (!isValidCustomSlug(req.body.slug)) {
+      return res.status(400).json({
+        error: "Custom URL must be 3-60 characters, lowercase letters/numbers/hyphens only, and not a reserved word",
+      });
+    }
+    const taken = await Frame.findOne({ slug: req.body.slug, _id: { $ne: frame._id } }).select("_id");
+    if (taken) {
+      return res.status(400).json({ error: "That custom URL is already taken" });
+    }
+  }
+
   Object.assign(frame, req.body);
   await frame.save();
   res.json(frame);
@@ -41,6 +102,18 @@ router.post("/:id/moderate", requireAuth, requireRole("admin"), async (req, res)
     { new: true }
   );
   res.json(frame);
+});
+
+// Framer: delete only their own frame; Admin: any frame
+router.delete("/:id", requireAuth, async (req, res) => {
+  const frame = await Frame.findById(req.params.id);
+  if (!frame) return res.status(404).json({ error: "Not found" });
+  if (req.user.role !== "admin" && frame.ownerId.toString() !== req.user.sub) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  await Frame.findByIdAndDelete(req.params.id);
+  res.status(204).send();
 });
 
 export default router;

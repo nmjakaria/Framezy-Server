@@ -6,7 +6,8 @@ const frameSchema = new mongoose.Schema(
     description: String,
     category: String,
     tags: [String],
-    ownerId: { type: mongoose.Schema.Types.ObjectId, required: true }, // framer's authUserId
+    ownerId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    slug: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
     fileUrl: String,
     thumbnailUrl: String,
     canvasWidth: Number,
