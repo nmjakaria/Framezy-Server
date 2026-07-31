@@ -25,11 +25,11 @@ export async function requireAuth(req, res, next) {
     const { payload } = await jwtVerify(token, getJWKS(), {
       issuer: process.env.AUTH_ISSUER_URL,
     });
-    console.log("DEBUG JWT payload:", payload);
+    // console.log("DEBUG JWT payload:", payload);
     req.user = payload;
     next();
   } catch (err) {
-    console.log("DEBUG JWT verify failed:", err.message); // ← temporary
+    // console.log("DEBUG JWT verify failed:", err.message); // ← temporary
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 }
