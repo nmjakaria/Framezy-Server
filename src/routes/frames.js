@@ -121,13 +121,35 @@ router.patch("/:id", requireAuth, async (req, res) => {
     res.json(frame);
 });
 
-// Admin only: approve/reject
+// view
+router.post("/:id/view", async (req, res) => {
+    const frame = await Frame.findByIdAndUpdate(
+        req.params.id,
+        { $inc: { "stats.views": 1 } },
+        { returnDocument: "after", select: "stats" }
+    );
+    if (!frame) return res.status(404).json({ error: "Frame not found" });
+    res.json({ views: frame.stats.views });
+});
+
+// download
+router.post("/:id/download", async (req, res) => {
+    const frame = await Frame.findByIdAndUpdate(
+        req.params.id,
+        { $inc: { "stats.downloads": 1 } },
+        { returnDocument: "after", select: "stats" }
+    );
+    if (!frame) return res.status(404).json({ error: "Frame not found" });
+    res.json({ downloads: frame.stats.downloads });
+});
+
+// moderate
 router.post("/:id/moderate", requireAuth, requireRole("admin"), async (req, res) => {
-    const { decision } = req.body; // "published" | "rejected"
+    const { decision } = req.body;
     const frame = await Frame.findByIdAndUpdate(
         req.params.id,
         { status: decision },
-        { new: true }
+        { returnDocument: "after" }
     );
     res.json(frame);
 });
