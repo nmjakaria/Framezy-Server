@@ -9,7 +9,7 @@ const router = Router();
 // Guest: browse/search published frames — no auth
 router.get("/", async (req, res) => {
     const { category, q } = req.query;
-    const filter = { status: "published" };
+    const filter = { status: { $in: ["published", "pending"] } };
     if (category) filter.category = category;
     if (q) filter.name = { $regex: q, $options: "i" };
     const frames = await Frame.find(filter).limit(50);
